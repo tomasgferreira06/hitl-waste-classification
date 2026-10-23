@@ -115,3 +115,32 @@ Os pesos e a configuração local Ultralytics ficam em `artifacts/`, excluídos 
 Git. O script desativa a gravação das previsões. Pesos `*.pt` e pastas `runs/`
 também são ignorados; o dataset permanece na cache externa Kaggle.
 A primeira execução requer Internet para os pesos e, se ausente, o dataset.
+
+## EDA e protocolo comum às experiências A e B
+
+O início do notebook contém tabelas, gráficos, auditoria de integridade/duplicados
+e criação de manifestos. **Executar apenas essa secção; parar no separador da
+implementação histórica.** As células originais dos modelos permanecem intactas
+e ainda usam os seus splits antigos: não utilizar Run All nesta fase.
+
+O [protocolo experimental](paper/experimental_protocol.md) documenta os resultados,
+os problemas históricos e as decisões pendentes. Macro-F1 é a métrica principal;
+AULC de Macro-F1 de validação mede eficiência de anotação. O teste fica reservado
+à avaliação final, sem selecionar estratégias/configurações.
+
+Os manifestos em `data/manifests/` são comuns às duas experiências: treino 10859,
+validação 1552, teste 3104; pool inicial 200 e não rotulado 10659, exclusivamente
+do treino. SHA-256 exatos e candidatos pHash são agrupados conservadoramente para
+não atravessar splits. Os candidatos visuais e três conflitos de rótulo confirmados
+requerem revisão antes de treinar. Não foram removidas ou relabeladas imagens.
+
+```powershell
+uv run --locked python notebooks/dataset_protocol.py
+uv run --locked python -m unittest discover -s notebooks -p test_dataset_protocol.py -v
+```
+
+O inventário completo é reservado à auditoria/oráculo; a vista do aprendiz obtém
+apenas IDs opacos para o pool não rotulado. Hashing e leitura de imagens usam cache
+em `artifacts/eda/`; apagar essa cache força nova auditoria. Gráficos e miniaturas
+ficam nessa pasta ignorada pelo Git; não guardar outputs de miniaturas no notebook
+versionado. Apenas metadados e identificadores, sem imagens, são versionáveis.

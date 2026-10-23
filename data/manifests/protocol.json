@@ -1,0 +1,26 @@
+{
+  "dataset": "mostafaabla/garbage-classification/versions/1",
+  "seed": 42,
+  "split": "StratifiedGroupKFold(10): test folds 0,1; validation 2; train 3..9",
+  "grouping": "connected components: SHA-256 exact + conservative pHash candidates",
+  "phash": "DCT-II ortho 32x32 grayscale (EXIF transposed), 8x8 coefficients, median excluding DC",
+  "phash_hamming_threshold": 4,
+  "initial_size": 200,
+  "initial_selection": "class-proportional largest remainder; singleton groups; numpy default_rng(42)",
+  "counts": {
+    "train": 10859,
+    "validation": 1552,
+    "test": 3104,
+    "labeled_initial": 200,
+    "unlabeled": 10659
+  },
+  "manifest_sha256": {
+    "inventory.csv": "9c315012922a9e6b9b6ea326dbc5d1215305c3c578b2e4b978a12670267aeff2",
+    "labeled_initial.csv": "36d604783cb77517c6395b8a83932725beaa91486ea9c004986363ae625f689d",
+    "test.csv": "4ea7f723beaa98a1ec280719a856ebc035c26dd689ff92d268ebd3a21bf1d047",
+    "train.csv": "a7970980ef45714c66930340abbfe2d74eeca8ad2329526838d072b30fd0f67a",
+    "unlabeled.csv": "f75a6f75115fc503c25613822030a82585f6bbc2e617b2cbcf2129439135723c",
+    "validation.csv": "14524a2b08c32ac38378f3e683a1ed7a6312014fd6f7ad0b0135ed510cc47bd8",
+    "visual_candidates.csv": "915ab59dfef5907b9c6390d53ddae64dc5280163d181292c063779dd564ffcfc"
+  }
+}
