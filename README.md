@@ -80,3 +80,38 @@ Resultado observado na versão 1:
 
 As pastas `data/` e `artifacts/` mantêm-se disponíveis; o notebook utiliza a
 cache do Kaggle para as imagens e o caminho original para as features.
+
+## Experiência B: validar YOLO26s Classification com CUDA
+
+No Windows, `pyproject.toml` seleciona as builds CUDA 13.0 de PyTorch e
+Torchvision pelo índice oficial `cu130`, conforme a
+[integração uv/PyTorch](https://docs.astral.sh/uv/guides/integration/pytorch/).
+As versões exatas estão em `uv.lock`. O driver NVIDIA validado é o 591.74;
+`nvidia-smi` indica suporte até CUDA 13.1, enquanto o runtime das builds é 13.0.
+Não é necessário instalar o CUDA Toolkit completo para este teste.
+
+Executar na raiz do projeto:
+
+```powershell
+nvidia-smi
+uv sync --locked
+uv run --locked python notebooks/validate_yolo_cuda.py
+```
+
+O script exige CUDA, testa uma operação na GPU e carrega os pesos oficiais
+`yolo26s-cls.pt`, [pré-treinados em ImageNet](https://docs.ultralytics.com/tasks/classify/).
+Mantém a cabeça original de 1000 classes e executa uma inferência a 224 × 224,
+com `device=0`, numa imagem de `battery` da versão 1 do dataset Kaggle em cache.
+Não executa treino ou extração de features, nem modifica a Experiência A.
+
+O resultado mostra versões, GPU, número de parâmetros, SHA-256 dos pesos,
+validação das probabilidades, tempo e memória CUDA. O tempo da primeira chamada
+inclui preparação e warmup; o tempo `inference` é o reportado pelo Ultralytics.
+A memória reportada pertence ao alocador PyTorch, não ao total de processos da GPU.
+Uma inferência bem-sucedida não garante que um futuro fine-tuning caiba nos 6 GB.
+As previsões são classes ImageNet e não medem desempenho nas 12 classes de resíduos.
+
+Os pesos e a configuração local Ultralytics ficam em `artifacts/`, excluídos do
+Git. O script desativa a gravação das previsões. Pesos `*.pt` e pastas `runs/`
+também são ignorados; o dataset permanece na cache externa Kaggle.
+A primeira execução requer Internet para os pesos e, se ausente, o dataset.

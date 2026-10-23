@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Model weights and generated experiment artifacts
+*.pt
+/artifacts/*
+!/artifacts/.gitkeep
+runs/
