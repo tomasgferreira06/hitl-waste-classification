@@ -1,0 +1,4 @@
+relative_path,original_label,reason,kept_relative_path,provenance
+plastic/plastic159.jpg,plastic,duplicado exato (SHA-256) com rótulo incorreto; objeto é white-glass,white-glass/white-glass129.jpg,revisão visual humana
+metal/metal459.jpg,metal,duplicado exato (SHA-256) com rótulo incorreto; objeto é white-glass,white-glass/white-glass412.jpg,revisão visual humana
+white-glass/white-glass761.jpg,white-glass,duplicado exato (SHA-256) com rótulo incorreto; objeto é plastic,plastic/plastic556.jpg,revisão visual humana

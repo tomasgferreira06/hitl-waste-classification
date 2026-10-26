@@ -5,7 +5,9 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from tempfile import TemporaryDirectory
+from shutil import copyfile
 import unittest
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -16,16 +18,20 @@ class DatasetProtocolTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.directory = protocol.MANIFEST_DIR
-        cls.records = protocol.read_csv(cls.directory / 'inventory.csv')
+        cls.original = protocol.load_original_inventory()
+        cls.records = protocol.load_effective_inventory()
         cls.lookup = {record['image_id']: record for record in cls.records}
         cls.candidates = protocol.read_csv(cls.directory / 'visual_candidates.csv')
         cls.parts = {name: [row['image_id'] for row in protocol.read_csv(cls.directory / f'{name}.csv')]
                      for name in ('train', 'validation', 'test', 'labeled_initial', 'unlabeled')}
 
     def test_inventory_and_paths(self):
-        self.assertEqual(len(self.records), 15515)
+        self.assertEqual(len(self.original), 15515)
+        self.assertEqual(len(self.records), 15512)
         self.assertEqual(len(self.lookup), len(self.records))
-        self.assertEqual(Counter(record['label'] for record in self.records), protocol.EXPECTED_COUNTS)
+        self.assertEqual(Counter(record['label'] for record in self.original), protocol.EXPECTED_COUNTS)
+        self.assertEqual(Counter(record['label'] for record in self.records),
+                         {**protocol.EXPECTED_COUNTS, 'metal': 768, 'plastic': 864, 'white-glass': 774})
         self.assertFalse([record for record in self.records if record['error']])
         root = protocol.dataset_root()
         for record in self.records:
@@ -77,7 +83,7 @@ class DatasetProtocolTests(unittest.TestCase):
             ids = self.parts[name]
             self.assertLessEqual(abs(len(ids) / len(self.records) - target), .01, name)
             counts = Counter(self.lookup[key]['label'] for key in ids)
-            for label, total in protocol.EXPECTED_COUNTS.items():
+            for label, total in Counter(row['label'] for row in self.records).items():
                 self.assertLessEqual(abs(counts[label] / total - target), .02, f'{name}: {label}')
 
     def test_initial_pool_and_hidden_unlabeled_truth(self):
@@ -111,13 +117,15 @@ class DatasetProtocolTests(unittest.TestCase):
 
     def test_reproducibility_including_manifest_bytes(self):
         with TemporaryDirectory() as directory:
-            reproduced = protocol.write_manifests(self.records, self.candidates, directory)
+            for source in self.directory.iterdir():
+                if source.is_file():
+                    copyfile(source, Path(directory) / source.name)
+            with patch.object(protocol, 'make_partitions', side_effect=AssertionError('Não repetir splits')):
+                reproduced = protocol.write_manifests(self.original, self.candidates, directory)
             self.assertEqual(reproduced, self.parts)
             for source in self.directory.glob('*.csv'):
                 self.assertEqual(source.read_bytes(), (Path(directory) / source.name).read_bytes(), source.name)
             self.assertEqual((self.directory / 'protocol.json').read_bytes(), (Path(directory) / 'protocol.json').read_bytes())
-        reordered, _ = protocol.make_partitions(list(reversed(self.records)), list(reversed(self.candidates)))
-        self.assertEqual(reordered, self.parts)
 
     def test_visual_index_matches_bruteforce_on_small_fixture(self):
         values = [0, 1, 15, 31, 1 << 63, (1 << 64) - 1]

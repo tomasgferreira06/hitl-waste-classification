@@ -1,2 +1,3 @@
 # Keep manifest checksums reproducible on Windows and POSIX checkouts.
 data/manifests/* text eol=lf
+data/review/* text eol=lf

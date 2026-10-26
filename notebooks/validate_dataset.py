@@ -29,21 +29,22 @@ assert snapshot == {p: (p.stat().st_size, p.stat().st_mtime_ns) for p in snapsho
 dataset = namespace['GarbageDataset'](root)
 expected_counts = {
     'battery': 945, 'biological': 985, 'brown-glass': 607, 'cardboard': 891,
-    'clothes': 5325, 'green-glass': 629, 'metal': 769, 'paper': 1050,
-    'plastic': 865, 'shoes': 1977, 'trash': 697, 'white-glass': 775,
+    'clothes': 5325, 'green-glass': 629, 'metal': 768, 'paper': 1050,
+    'plastic': 864, 'shoes': 1977, 'trash': 697, 'white-glass': 774,
 }
 assert set(dataset.class_names) == namespace['EXPECTED_CLASSES']
 counts = Counter(dataset.labels)
 actual_counts = {name: counts[index] for index, name in enumerate(dataset.class_names)}
 assert actual_counts == expected_counts, actual_counts
-assert len(dataset) == 15515
+assert len(dataset) == 15512
 for name, count in actual_counts.items():
     print(f'{name}: {count}')
     image, label, filename = dataset[dataset.labels.index(dataset.class_to_idx[name])]
     assert image.mode == 'RGB' and min(image.size) > 0
     assert dataset.class_names[label] == name
-    for stored_path in (filename, f'./garbage_classification/{name}/{Path(filename).name}',
-                        f'C:\\old-cache\\{name}\\{Path(filename).name}'):
+    folder = Path(filename).parent.name
+    for stored_path in (filename, f'./garbage_classification/{folder}/{Path(filename).name}',
+                        f'C:\\old-cache\\{folder}\\{Path(filename).name}'):
         assert namespace['fix_path'](stored_path) == filename
 print(f'Total: {len(dataset)}; leitura RGB validada nas 12 classes.')
 try:

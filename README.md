@@ -60,23 +60,45 @@ Este comando valida a estrutura do notebook, a reutilização da cache, a contag
 de imagens, a leitura RGB de uma imagem por classe com `GarbageDataset` e a
 leitura de imagens nas duas interfaces HITL. Não extrai features nem treina modelos.
 
-Resultado observado na versão 1:
+Distribuição original Kaggle v1 (15 515 imagens) e dataset efetivo após curadoria humana (15 512):
 
-| Classe | Imagens |
-| --- | ---: |
-| battery | 945 |
-| biological | 985 |
-| brown-glass | 607 |
-| cardboard | 891 |
-| clothes | 5325 |
-| green-glass | 629 |
-| metal | 769 |
-| paper | 1050 |
-| plastic | 865 |
-| shoes | 1977 |
-| trash | 697 |
-| white-glass | 775 |
-| **Total** | **15515** |
+| Classe | Original Kaggle | Efetivo |
+| --- | ---: | ---: |
+| battery | 945 | 945 |
+| biological | 985 | 985 |
+| brown-glass | 607 | 607 |
+| cardboard | 891 | 891 |
+| clothes | 5325 | 5325 |
+| green-glass | 629 | 629 |
+| metal | 769 | 768 |
+| paper | 1050 | 1050 |
+| plastic | 865 | 864 |
+| shoes | 1977 | 1977 |
+| trash | 697 | 697 |
+| white-glass | 775 | 774 |
+| **Total** | **15515** | **15512** |
+
+Após inspeção visual humana de três grupos de duplicados exatos com rótulos contraditórios,
+`data/manifests/excluded_images.csv` exclui as três cópias incorretamente rotuladas e
+mantém as corretas (os rótulos Kaggle nunca são alterados):
+
+| Excluída | Mantida |
+| --- | --- |
+| `plastic/plastic159.jpg` | `white-glass/white-glass129.jpg` |
+| `metal/metal459.jpg` | `white-glass/white-glass412.jpg` |
+| `white-glass/white-glass761.jpg` | `plastic/plastic556.jpg` |
+
+`inventory.csv` continua a ser o inventário Kaggle completo (EDA); as experiências usam
+`load_effective_inventory()`, `GarbageDataset` e os manifestos de divisão, todos sem as
+exclusões. Os splits não foram refeitos: apenas se removeram os três ids de `train` e
+`unlabeled` (treino 10856, validação 1552, teste 3104, pool inicial 200, unlabeled 10656).
+Futuras experiências A e B, incluindo YOLO, devem partir de `load_effective_inventory()`
+e nunca percorrer diretamente as pastas Kaggle.
+
+Reiniciar o kernel depois desta alteração. Os arquivos de features guardam o SHA-256 de
+`excluded_images.csv`; os três pontos de carregamento recusam arquivos sem essa revisão
+ou com revisão diferente (por exemplo, o antigo `notebooks/garbage_features.npz`, que deve
+ser regenerado, não reutilizado). Nenhum ficheiro foi apagado.
 
 As pastas `data/` e `artifacts/` mantêm-se disponíveis; o notebook utiliza a
 cache do Kaggle para as imagens e o caminho original para as features.
@@ -131,8 +153,11 @@ AULC de Macro-F1 de validação mede eficiência de anotação. O teste fica res
 Os manifestos em `data/manifests/` são comuns às duas experiências: treino 10859,
 validação 1552, teste 3104; pool inicial 200 e não rotulado 10659, exclusivamente
 do treino. SHA-256 exatos e candidatos pHash são agrupados conservadoramente para
-não atravessar splits. Os candidatos visuais e três conflitos de rótulo confirmados
-requerem revisão antes de treinar. Não foram removidas ou relabeladas imagens.
+não atravessar splits. As três exclusões humanas estão em `excluded_images.csv`;
+não foram modificadas imagens. Os 234 candidatos visuais existentes permanecem
+como resultados históricos, sem recalcular ou apresentar a interface dos 55 pares.
+As atribuições dos restantes IDs e o pool inicial não mudaram; as exclusões
+removem só três imagens do treino não rotulado.
 
 ```powershell
 uv run --locked python notebooks/dataset_protocol.py
@@ -144,3 +169,24 @@ apenas IDs opacos para o pool não rotulado. Hashing e leitura de imagens usam c
 em `artifacts/eda/`; apagar essa cache força nova auditoria. Gráficos e miniaturas
 ficam nessa pasta ignorada pelo Git; não guardar outputs de miniaturas no notebook
 versionado. Apenas metadados e identificadores, sem imagens, são versionáveis.
+
+## Duplicados exatos após revisão humana
+
+```powershell
+uv run --locked jupyter lab notebooks/01_waste_classification_hitl.ipynb
+```
+
+Depois da análise de duplicados na EDA, executar **Human-reviewed exact duplicates
+with conflicting original labels**: apresenta a tabela de exclusões e os 3 grupos
+lado a lado, com ficheiro, classe Kaggle, grupo e indicação de excluída/mantida, a partir
+dos dados originais (pré-exclusão). A distribuição original e a efetiva são apresentadas separadamente.
+Foi removida toda a subsecção visual dos 55 pares, incluindo os seus outputs.
+
+O comando `dataset_protocol.py` aplica as exclusões e atualiza as estatísticas,
+de forma idempotente; não sorteia splits nem recalcula hashes ou candidatos.
+Os ficheiros históricos em `data/review/` ficam preservados, anteriores à curadoria,
+e não alteram o dataset efetivo. Não há uma nova interface de revisão.
+
+```powershell
+uv run --locked python -m unittest discover -s notebooks -p 'test_*.py' -v
+```

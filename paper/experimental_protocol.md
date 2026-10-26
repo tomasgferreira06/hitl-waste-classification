@@ -13,7 +13,9 @@ Os modelos históricos ainda **não** os consomem: esta tarefa prepara o protoco
 sem migrar os ciclos de treino. Executar apenas a secção EDA do notebook; parar
 antes do separador «Implementação científica histórica». Não utilizar Run All.
 
-## Resultados da auditoria
+## Resultados originais da auditoria Kaggle
+
+As contagens da tabela seguinte são as originais, anteriores à curadoria humana.
 
 | Classe | Total | % | Treino | Validação | Teste | Inicial | Não rotulado |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -80,12 +82,38 @@ deste protocolo, não foi otimizado com resultados de modelos. A galeria inicial
 contém exemplos visualmente muito semelhantes; a revisão completa dos 234 pares
 continua pendente. Nenhuma imagem/rótulo foi removido, movido ou modificado.
 
+### Três exclusões humanas confirmadas
+
+O anotador humano reviu três grupos de duplicados exatos (SHA-256) com rótulos contraditórios e
+decidiu excluir as cópias incorretamente rotuladas: `plastic/plastic159.jpg` (mantida
+`white-glass/white-glass129.jpg`), `metal/metal459.jpg` (mantida `white-glass/white-glass412.jpg`)
+e `white-glass/white-glass761.jpg` (mantida `plastic/plastic556.jpg`). A decisão está em
+`data/manifests/excluded_images.csv` (caminho, classe original, motivo, cópia mantida, proveniência).
+Nenhum rótulo Kaggle foi alterado e a cache Kaggle não foi modificada; a política anterior de
+correção de rótulos foi substituída (o histórico permanece no Git). `inventory.csv` mantém as 15 515
+imagens originais para a EDA; o dataset efetivo tem 15 512 imagens (metal 768, plastic 864,
+white-glass 774; restantes classes inalteradas). Os splits não foram refeitos: os três ids estavam em
+`train`/`unlabeled` e foram removidos; os hashes anteriores ficam em `protocol.json`
+(`pre_exclusion_manifest_sha256`). Efetivos: treino 10856, validação 1552, teste 3104, pool inicial
+200 (inalterado, nenhuma exclusão lhe pertencia) e unlabeled 10656.
+
+`GarbageDataset` omite os caminhos de `excluded_images.csv` e as duas experiências deverão partilhar
+`load_effective_inventory()`. Não percorrer diretamente as pastas Kaggle no futuro treino YOLO. O treino e a migração dos ciclos AL continuam
+fora desta tarefa. Os arquivos de features sem o SHA-256 atual de `excluded_images.csv`
+são recusados explicitamente pelos carregadores do notebook; não são apagados.
+Reiniciar o kernel para não reutilizar variáveis/modelos históricos em memória.
+
+A secção dos três grupos exatos usa o inventário original (pré-exclusão) e indica, por imagem,
+a classe Kaggle e se foi excluída ou mantida, precedida pela tabela de exclusões. A interface dos 55 pares foi removida;
+os 234 candidatos originais ficam preservados, sem recomputação ou novas decisões.
+
 **Política conservadora de prevenção de leakage:** formar componentes conexas
 pela união de grupos SHA-256 e de pares pHash candidatos. Toda a componente fica
 no mesmo conjunto, mesmo que contenha classes distintas. O maior grupo tem 14
 imagens. Isto evita fuga pelos pares identificados sem declarar candidatos como
 confirmados; pode manter imagens distintas juntas. Rever esta política e os
-conflitos antes do treino. Uma revisão que altere grupos exige gerar novamente
+conflitos adicionais antes do treino. Os três conflitos acima estão resolvidos
+por decisão humana; os grupos e splits desta tarefa não mudam. Uma revisão futura que altere grupos exige gerar novamente
 e congelar todos os manifestos para ambas as experiências.
 
 ## Divisão reproduzível
@@ -109,7 +137,7 @@ e congelar todos os manifestos para ambas as experiências.
    grupos inteiros em vez de forçar os números a partir imagens duplicadas.
 
 `data/manifests/inventory.csv` é o registo auditável: ID, caminho relativo à raiz
-`garbage_classification/`, classe Kaggle, SHA-256, pHash, dimensões, formato,
+`garbage_classification/`, classe Kaggle (`label`, nunca alterada), SHA-256, pHash, dimensões, formato,
 integridade e grupo. `train.csv`, `validation.csv`, `test.csv` e `unlabeled.csv`
 contêm apenas IDs. `labeled_initial.csv` acrescenta rótulo e proveniência.
 `visual_candidates.csv` contém todos os pares. `protocol.json` regista método,
@@ -184,8 +212,8 @@ não participam em gradient updates, ajuste de scaler ou aquisição de amostras
 - Primeiro `HITLLabeler`: callback ignora o `label_id` recebido; não foi corrigido.
 - Falta migrar explicitamente os modelos/AL para os manifestos comuns. Não apresentar
   resultados das células históricas como experiências realizadas com este protocolo.
-- Rever os 234 pares visuais e decidir como tratar os três conflitos confirmados
-  sem consultar desempenho de teste. Não assumir que a classe correta já foi decidida.
+- Os três conflitos exatos foram resolvidos por exclusão humana (acima). Não excluir
+  outras imagens nem tirar novas conclusões sobre os candidatos visuais nesta tarefa.
 - Fixar orçamento final, batches, repetições/seeds, frequência de validação,
   hiperparâmetros/early stopping/checkpoints e critério prévio de desempate Macro-F1/AULC.
 - Decidir consultas por imagem ou grupo, propagação de rótulos e custo humano,
@@ -198,7 +226,11 @@ uv run --locked python notebooks/dataset_protocol.py
 uv run --locked python -m unittest discover -s notebooks -p test_dataset_protocol.py -v
 ```
 
-O primeiro comando audita/reutiliza cache e regenera manifestos deterministicamente.
+O primeiro comando aplica `excluded_images.csv` (idempotente) e atualiza checksums e estatísticas
+nos manifestos existentes. Não executa nova divisão, hashing ou cálculo de candidatos.
+Os splits foram criados originalmente com os rótulos Kaggle; esta curadoria posterior
+preserva os seus IDs e apenas atualiza as contagens. O comando recusa alterações
+inesperadas aos ficheiros de pertença dos conjuntos/pools.
 Para ver as figuras, executar apenas os imports/configuração originais e as células
 EDA que antecedem os modelos no notebook. Os testes cobrem contagens, checksums,
 integridade dos caminhos Windows/POSIX, exclusividade, grupos, estratificação,

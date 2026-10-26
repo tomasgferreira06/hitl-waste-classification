@@ -1,6 +1,6 @@
 """EDA e manifestos comuns às experiências; não importa nem treina modelos."""
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 import csv
 import hashlib
 import json
@@ -24,6 +24,9 @@ EXPECTED_COUNTS = {
 }
 IMAGE_SUFFIXES = {'.jpg', '.jpeg', '.png', '.bmp', '.webp'}
 PHASH_DISTANCE = 4
+EXCLUSIONS_FILE = MANIFEST_DIR / 'excluded_images.csv'
+EXCLUSION_COLUMNS = ['relative_path', 'original_label', 'reason', 'kept_relative_path', 'provenance']
+PARTITIONS = ('train', 'validation', 'test', 'labeled_initial', 'unlabeled')
 
 
 def dataset_root():
@@ -201,8 +204,101 @@ def read_csv(path):
         return list(csv.DictReader(stream))
 
 
+def load_exclusions(path=EXCLUSIONS_FILE):
+    """Imagens excluídas do dataset efetivo; os ficheiros Kaggle nunca são alterados."""
+    exclusions = {}
+    for row in read_csv(path):
+        relative = PurePosixPath(row['relative_path'])
+        kept = PurePosixPath(row['kept_relative_path'])
+        if (list(row) != EXCLUSION_COLUMNS or len(relative.parts) != 2 or len(kept.parts) != 2
+                or relative.parts[0] != row['original_label'] or row['original_label'] not in EXPECTED_COUNTS
+                or any(c in row['relative_path'] + row['kept_relative_path'] for c in '\\:')
+                or '..' in relative.parts + kept.parts
+                or not row['reason'].strip() or not row['provenance'].strip()):
+            raise ValueError(f'Exclusão inválida: {row}')
+        if row['relative_path'] in exclusions:
+            raise ValueError(f'Exclusão repetida: {relative}')
+        exclusions[row['relative_path']] = row
+    return exclusions
+
+
+def excluded_paths(path=EXCLUSIONS_FILE):
+    return frozenset(load_exclusions(path))
+
+
+def excluded_images_revision(path=EXCLUSIONS_FILE):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def load_original_inventory(directory=MANIFEST_DIR):
+    """Dataset Kaggle completo (15515), só para EDA/documentação; nunca para experiências."""
+    return read_csv(Path(directory) / 'inventory.csv')
+
+
+def load_effective_inventory(directory=MANIFEST_DIR):
+    directory = Path(directory)
+    exclusions = load_exclusions(directory / 'excluded_images.csv')
+    records = load_original_inventory(directory)
+    by_path = {record['relative_path']: record for record in records}
+    for relative, row in exclusions.items():
+        kept = by_path.get(row['kept_relative_path'])
+        if (relative not in by_path or by_path[relative]['label'] != row['original_label'] or kept is None
+                or kept['relative_path'] in exclusions or kept['sha256'] != by_path[relative]['sha256']):
+            raise ValueError(f'Exclusão inconsistente com o inventário: {relative}')
+    return [record for record in records if record['relative_path'] not in exclusions]
+
+
+def read_partitions(directory=MANIFEST_DIR):
+    return {name: [row['image_id'] for row in read_csv(Path(directory) / f'{name}.csv')] for name in PARTITIONS}
+
+
+def load_feature_archive(path, exclusions_path=EXCLUSIONS_FILE):
+    archive = np.load(path, allow_pickle=False)
+    if ('excluded_images_sha256' not in archive.files
+            or str(archive['excluded_images_sha256'].item()) != excluded_images_revision(exclusions_path)):
+        archive.close()
+        raise ValueError(f'Artefacto de features desatualizado: {path}. Regenerar com as exclusões atuais; não reutilizar silenciosamente.')
+    return archive
+
+
+def refresh_effective_dataset(directory=MANIFEST_DIR):
+    """Remover as exclusões das divisões/pools existentes; nunca recalcular grupos, pools ou splits."""
+    directory = Path(directory)
+    metadata_path = directory / 'protocol.json'
+    metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
+    original = load_original_inventory(directory)
+    records = load_effective_inventory(directory)
+    excluded_ids = {row['image_id'] for row in original} - {row['image_id'] for row in records}
+    lookup = {record['image_id']: record for record in records}
+    # Fixar uma única vez os hashes anteriores às exclusões (rastreabilidade das divisões congeladas).
+    metadata.setdefault('pre_exclusion_manifest_sha256', metadata.pop('manifest_sha256'))
+    for name in PARTITIONS:
+        rows = read_csv(directory / f'{name}.csv')
+        if name == 'labeled_initial' and any(row['image_id'] in excluded_ids for row in rows):
+            raise ValueError('Uma exclusão pertence ao pool inicial; requer substituição estratificada documentada.')
+        write_csv(directory / f'{name}.csv', [row for row in rows if row['image_id'] not in excluded_ids], list(rows[0]))
+    partitions = read_partitions(directory)
+    if any(row['label'] != lookup[row['image_id']]['label'] for row in read_csv(directory / 'labeled_initial.csv')):
+        raise ValueError('Rótulo do pool inicial diferente do rótulo original Kaggle.')
+    metadata.pop('split_membership_sha256', None)
+    metadata.update(
+        label_semantics='label = original Kaggle label (never changed); excluded_images.csv removes human-reviewed mislabeled duplicates',
+        excluded_images_sha256=excluded_images_revision(directory / 'excluded_images.csv'),
+        original_dataset_size=len(original), effective_dataset_size=len(records), excluded_count=len(excluded_ids),
+        original_class_counts=dict(sorted(Counter(r['label'] for r in original).items())),
+        effective_class_counts=dict(sorted(Counter(r['label'] for r in records).items())),
+        effective_split_class_counts={name: dict(sorted(Counter(lookup[key]['label'] for key in ids).items()))
+                                      for name, ids in partitions.items()},
+        counts={name: len(ids) for name, ids in partitions.items()},
+        manifest_sha256={path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(directory.glob('*.csv'))})
+    metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
+    return partitions
+
+
 def write_manifests(records, candidates, directory=MANIFEST_DIR):
     directory = Path(directory)
+    if (directory / 'protocol.json').exists():
+        return refresh_effective_dataset(directory)
     partitions, groups = make_partitions(records, candidates)
     inventory = [dict(record, group_id=groups[record['image_id']]) for record in records]
     write_csv(directory / 'inventory.csv', inventory, list(inventory[0]))
@@ -223,7 +319,7 @@ def write_manifests(records, candidates, directory=MANIFEST_DIR):
                     counts={name: len(ids) for name, ids in partitions.items()},
                     manifest_sha256={path.name: hashlib.sha256(path.read_bytes()).hexdigest()
                                      for path in sorted(directory.glob('*.csv'))})
-    (directory / 'protocol.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    (directory / 'protocol.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
     return partitions
 
 
@@ -231,13 +327,15 @@ def load_pool_views(directory=MANIFEST_DIR):
     """A vista do aprendiz não recebe a tabela de ground truth nem caminhos com classes."""
     directory = Path(directory)
     labeled = read_csv(directory / 'labeled_initial.csv')
+    lookup = {record['image_id']: record['label'] for record in load_effective_inventory(directory)}
+    labeled = [dict(row, label=lookup[row['image_id']]) for row in labeled]
     unlabeled = tuple(row['image_id'] for row in read_csv(directory / 'unlabeled.csv'))
     return labeled, unlabeled
 
 
 def load_pool_image(root, image_id, directory=MANIFEST_DIR):
     """Fronteira de I/O: devolver pixels RGB, sem rótulo ou caminho na vista do aprendiz."""
-    records = read_csv(Path(directory) / 'inventory.csv')
+    records = load_effective_inventory(directory)
     record = next((record for record in records if record['image_id'] == image_id), None)
     if record is None:
         raise KeyError(f'Identificador desconhecido: {image_id}')
@@ -251,8 +349,16 @@ def load_pool_image(root, image_id, directory=MANIFEST_DIR):
 
 
 if __name__ == '__main__':
-    records = scan_dataset(dataset_root())
-    candidates = visual_candidates(records)
-    partitions = write_manifests(records, candidates)
-    print(json.dumps(dict(images=len(records), exact_groups=len(exact_groups(records)),
-                          visual_pairs=len(candidates), splits={key: len(value) for key, value in partitions.items()}), indent=2))
+    partitions = refresh_effective_dataset()
+    print(json.dumps(dict(effective_counts=Counter(record['label'] for record in load_effective_inventory()),
+                          splits={key: len(value) for key, value in partitions.items()}), indent=2))
+
+
+def feature_rows(filenames, image_ids):
+    """Linhas do arquivo de features para cada image_id, alinhadas por ID (sha256 de 'classe/ficheiro'), nunca por posição."""
+    row_of = {hashlib.sha256('/'.join(str(f).replace('\\', '/').split('/')[-2:]).encode()).hexdigest(): i
+              for i, f in enumerate(filenames)}
+    missing = [i for i in image_ids if i not in row_of]
+    if missing:
+        raise ValueError(f'{len(missing)} IDs dos manifestos sem features (ex.: {missing[0]}); regenerar features.')
+    return np.array([row_of[i] for i in image_ids])
