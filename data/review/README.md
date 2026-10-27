@@ -2,13 +2,10 @@
 
 ## Abrir a revisão
 
-```powershell
-uv run --locked jupyter lab notebooks/02_dataset_review.ipynb
-```
-
-Executar as duas células de código do notebook: a primeira mostra a fila e os
-estados; a segunda apresenta a interface. O notebook científico original não é
-alterado. Não há treino, inferência de modelos, novo processamento EDA, alteração
+O código da fila e da interface (`build_registry`, `prepare_review`, `record_decision`,
+`review_widget`) está na secção 9.4 de `notebooks/01_waste_classification_hitl.ipynb`.
+**Estado atual:** esta fila é anterior à curadoria; como os manifestos mudaram com as
+exclusões, `prepare_review()` recusa substituí-la e a interface não é apresentada no notebook. Não há treino, inferência de modelos, novo processamento EDA, alteração
 de rótulos ou regeneração de splits.
 
 ## Fila prioritária
@@ -99,14 +96,6 @@ mesmo que se registe uma única categoria de decisão no evento.
 
 ## Preparação e testes
 
-```powershell
-uv run --locked python notebooks/dataset_review.py
-uv run --locked python -m unittest discover -s notebooks -p test_dataset_review.py -v
-```
-
 A preparação lê `inventory.csv`, `visual_candidates.csv` e os manifestos de splits,
 verifica os seus checksums existentes e reutiliza os grupos SHA-256 registados.
 Não chama `scan_dataset`, `visual_candidates` nem `write_manifests`.
-Os testes cobrem cobertura/prioridades, IDs independentes da ordem, preservação
-do histórico, recusa de snapshots alterados, validação das decisões e imagens,
-filtros da interface e gravação apenas por ação explícita.

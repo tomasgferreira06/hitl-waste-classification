@@ -5,7 +5,9 @@ PracticalLab 1 da unidade curricular Trustworthy and Responsible Artificial Inte
 
 ## Estrutura
 
-- `notebooks/01_waste_classification_hitl.ipynb`: notebook com download automático do dataset; implementação científica original mantida.
+- `notebooks/01_waste_classification_hitl.ipynb`: notebook único com **todo o código Python do projeto**
+  (dataset, EDA, protocolo, features, Experiência A e HITL). Não há módulos `.py` locais.
+- `notebooks/garbage_features.npz`: features MobileNetV2 pré-extraídas.
 - `data/`: dados do projeto.
 - `artifacts/`: resultados e modelos.
 - `paper/`: material para o relatório.
@@ -45,20 +47,15 @@ para descarregar este dataset público na validação.
 
 As duas secções HITL resolvem os caminhos guardados nas features para a cache
 da versão fixa, incluindo caminhos antigos de Windows ou POSIX. Um ficheiro
-inexistente produz um erro explícito. Executar primeiro as células de imports
-e de configuração do dataset, mesmo ao reutilizar features existentes.
-`garbage_features.npz` continua relativo ao diretório de trabalho do kernel;
-o seu conteúdo não é recalculado nem validado por esta integração.
+inexistente produz um erro explícito. As features ficam em `notebooks/garbage_features.npz`
+(caminho resolvido a partir da raiz do projeto); só são extraídas se o ficheiro não existir
+ou com `REGENERATE_FEATURES = True`.
 
-### Validação sem treino
+### Execução
 
-```powershell
-uv run --locked python notebooks/validate_dataset.py
-```
-
-Este comando valida a estrutura do notebook, a reutilização da cache, a contagem
-de imagens, a leitura RGB de uma imagem por classe com `GarbageDataset` e a
-leitura de imagens nas duas interfaces HITL. Não extrai features nem treina modelos.
+O notebook executa-se sequencialmente (*Restart & Run All*). As etapas demoradas ou que
+escrevem artefactos estão protegidas por flags na secção 2 (`REGENERATE_FEATURES`,
+`REFRESH_MANIFESTS`, `RUN_EXPERIMENT_A`).
 
 Distribuição original Kaggle v1 (15 515 imagens) e dataset efetivo após curadoria humana (15 512):
 
@@ -103,47 +100,21 @@ ser regenerado, não reutilizado). Nenhum ficheiro foi apagado.
 As pastas `data/` e `artifacts/` mantêm-se disponíveis; o notebook utiliza a
 cache do Kaggle para as imagens e o caminho original para as features.
 
-## Experiência B: validar YOLO26s Classification com CUDA
+## Experiência B: YOLO26s Classification (pendente)
 
 No Windows, `pyproject.toml` seleciona as builds CUDA 13.0 de PyTorch e
 Torchvision pelo índice oficial `cu130`, conforme a
 [integração uv/PyTorch](https://docs.astral.sh/uv/guides/integration/pytorch/).
-As versões exatas estão em `uv.lock`. O driver NVIDIA validado é o 591.74;
-`nvidia-smi` indica suporte até CUDA 13.1, enquanto o runtime das builds é 13.0.
-Não é necessário instalar o CUDA Toolkit completo para este teste.
-
-Executar na raiz do projeto:
-
-```powershell
-nvidia-smi
-uv sync --locked
-uv run --locked python notebooks/validate_yolo_cuda.py
-```
-
-O script exige CUDA, testa uma operação na GPU e carrega os pesos oficiais
-`yolo26s-cls.pt`, [pré-treinados em ImageNet](https://docs.ultralytics.com/tasks/classify/).
-Mantém a cabeça original de 1000 classes e executa uma inferência a 224 × 224,
-com `device=0`, numa imagem de `battery` da versão 1 do dataset Kaggle em cache.
-Não executa treino ou extração de features, nem modifica a Experiência A.
-
-O resultado mostra versões, GPU, número de parâmetros, SHA-256 dos pesos,
-validação das probabilidades, tempo e memória CUDA. O tempo da primeira chamada
-inclui preparação e warmup; o tempo `inference` é o reportado pelo Ultralytics.
-A memória reportada pertence ao alocador PyTorch, não ao total de processos da GPU.
-Uma inferência bem-sucedida não garante que um futuro fine-tuning caiba nos 6 GB.
-As previsões são classes ImageNet e não medem desempenho nas 12 classes de resíduos.
-
-Os pesos e a configuração local Ultralytics ficam em `artifacts/`, excluídos do
-Git. O script desativa a gravação das previsões. Pesos `*.pt` e pastas `runs/`
-também são ignorados; o dataset permanece na cache externa Kaggle.
-A primeira execução requer Internet para os pesos e, se ausente, o dataset.
+As versões exatas estão em `uv.lock`. Os pesos e a configuração local Ultralytics
+ficam em `artifacts/`, excluídos do Git; pesos `*.pt` e pastas `runs/` também são ignorados.
+O fine-tuning nas 12 classes ainda não está implementado.
 
 ## EDA e protocolo comum às experiências A e B
 
-O início do notebook contém tabelas, gráficos, auditoria de integridade/duplicados
-e criação de manifestos. **Executar apenas essa secção; parar no separador da
-implementação histórica.** As células originais dos modelos permanecem intactas
-e ainda usam os seus splits antigos: não utilizar Run All nesta fase.
+As secções 4–6 do notebook contêm tabelas, gráficos, auditoria de integridade/duplicados
+e os manifestos. As células históricas dos modelos (pool de 2%, interface de 150 imagens)
+permanecem intactas e ainda usam os seus splits antigos; não apresentar os seus resultados
+como conformes ao protocolo.
 
 O [protocolo experimental](paper/experimental_protocol.md) documenta os resultados,
 os problemas históricos e as decisões pendentes. Macro-F1 é a métrica principal;
@@ -159,16 +130,25 @@ como resultados históricos, sem recalcular ou apresentar a interface dos 55 par
 As atribuições dos restantes IDs e o pool inicial não mudaram; as exclusões
 removem só três imagens do treino não rotulado.
 
-```powershell
-uv run --locked python notebooks/dataset_protocol.py
-uv run --locked python -m unittest discover -s notebooks -p test_dataset_protocol.py -v
-```
+A reaplicação das exclusões aos manifestos corre com `REFRESH_MANIFESTS = True` (secção 6.2).
 
 O inventário completo é reservado à auditoria/oráculo; a vista do aprendiz obtém
 apenas IDs opacos para o pool não rotulado. Hashing e leitura de imagens usam cache
 em `artifacts/eda/`; apagar essa cache força nova auditoria. Gráficos e miniaturas
 ficam nessa pasta ignorada pelo Git; não guardar outputs de miniaturas no notebook
 versionado. Apenas metadados e identificadores, sem imagens, são versionáveis.
+
+## Experiência A: Active Learning (protocolo)
+
+Comparação Random / Least Confidence / Margin / Entropy com features MobileNetV2 + Logistic Regression,
+5 seeds, 200 rótulos iniciais e execução contínua até 5 000 rótulos (batch 100). **Macro-F1 de validação** é a
+métrica principal; AULC normalizada e o nº de imagens para atingir 90%/92% medem a eficiência de anotação.
+O teste não é usado para escolher estratégias. Detalhes em `paper/experimental_protocol.md`.
+
+No notebook, `RUN_EXPERIMENT_A = True` (secção 8.4) executa o protocolo completo (retomável, ~15 min).
+
+Os resultados vão para `artifacts/active_learning/` (fora do Git); a secção de comparação do notebook
+só lê esses ficheiros e produz as curvas, a tabela comparativa, a AULC e a eficiência de anotação.
 
 ## Duplicados exatos após revisão humana
 
@@ -182,11 +162,7 @@ lado a lado, com ficheiro, classe Kaggle, grupo e indicação de excluída/manti
 dos dados originais (pré-exclusão). A distribuição original e a efetiva são apresentadas separadamente.
 Foi removida toda a subsecção visual dos 55 pares, incluindo os seus outputs.
 
-O comando `dataset_protocol.py` aplica as exclusões e atualiza as estatísticas,
+`refresh_effective_dataset()` (secção 6.2) aplica as exclusões e atualiza as estatísticas,
 de forma idempotente; não sorteia splits nem recalcula hashes ou candidatos.
 Os ficheiros históricos em `data/review/` ficam preservados, anteriores à curadoria,
 e não alteram o dataset efetivo. Não há uma nova interface de revisão.
-
-```powershell
-uv run --locked python -m unittest discover -s notebooks -p 'test_*.py' -v
-```

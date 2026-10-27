@@ -199,12 +199,56 @@ eficiência de anotação de validação; nunca por curvas de teste repetidas.
 Transforms/normalizações aprendidas usam só treino rotulado. Validação/teste
 não participam em gradient updates, ajuste de scaler ou aquisição de amostras.
 
+## Protocolo da Experiência A (Active Learning com features pré-extraídas)
+
+**Pergunta:** conseguem as estratégias de AL aproximar-se do desempenho com todo o treino usando
+muito menos imagens anotadas do que Random Sampling?
+
+- **Dados:** 15 512 imagens efetivas (após as 3 exclusões), treino 10 856, validação 1 552, teste 3 104;
+  splits e exclusões inalterados. Features MobileNetV2 (1280-d) em `notebooks/garbage_features.npz`,
+  alinhadas por ID; o arquivo é recusado se o hash das exclusões não corresponder ou se tiver linhas a mais/menos.
+- **Classificador (igual para todas as estratégias):** `LogisticRegression(max_iter=1000, random_state=42)`,
+  sem scaler nem ajuste por estratégia. Retreinado de raiz a cada iteração com todas as imagens rotuladas.
+- **Estratégias:** Random, Least Confidence, Margin, Entropy; implementações originais (desempate estável).
+  O Random usa `default_rng([seed, iteração])` em vez do estado global, o que garante retoma exata.
+- **Seeds:** `[42, 123, 456, 789, 2026]`. Por seed, as 4 estratégias partilham o mesmo conjunto inicial
+  (200 imagens) e o mesmo pool não rotulado (treino − inicial). Seed 42: `labeled_initial.csv` existente.
+  Outras seeds: mesma regra do manifesto (alocação proporcional por classe, maior resto, grupos singleton,
+  `default_rng(seed)`), calculada em memória a partir de `inventory.csv`; nenhum manifesto é alterado.
+  A seleção inicial usa rótulos de treino (simulação); as consultas só usam probabilidades do modelo.
+- **Orçamento:** uma única execução contínua 200 → 5 000 por (seed, estratégia), batch fixo de **100**
+  (48 aquisições, 49 treinos). Os checkpoints `[200, 500, 1000, 1500, 2000, 3000, 5000]` (nº total de
+  imagens rotuladas) são todos múltiplos de 100 e, portanto, atingidos exatamente. Escolha de batch
+  igual para as 4 estratégias; não foi otimizada nem ajustada com resultados.
+- **Métrica:** Macro-F1 `f1_score(average="macro", zero_division=0)` na **validação**, avaliada em cada iteração.
+  O teste só é registado com `--with-test`, depois de congelado o protocolo, e é apenas descritivo.
+- **AULC:** `AULC = (1/(5000−200)) · ∫ Macro-F1(n) dn` (regra dos trapézios sobre as 49 iterações),
+  por seed; reportada como média ± DP (ddof=1) entre seeds. Não é ROC-AUC.
+- **Limiares exploratórios:** primeiro `n` (granularidade do batch) com Macro-F1 de validação ≥ 90% e ≥ 92%,
+  por estratégia e seed. Se não for atingido regista-se «não atingido», nunca 5 000.
+- **Comparação com Random:** diferença de AULC emparelhada por seed (média, DP, nº de seeds melhores).
+  É descritiva: com 5 seeds o menor p-valor exato bilateral do Wilcoxon é 0,0625, pelo que não se declara
+  significância estatística. As seeds variam o conjunto inicial e (Random) as consultas, não os splits.
+- **Full Training Baseline:** mesmo classificador com as 10 856 imagens de treino, treinado uma vez
+  (determinístico) e calculado pelo código; nunca introduzido manualmente.
+- **Resultados:** `artifacts/active_learning/<nome>/` (ignorado pelo Git): `config.json` (configuração,
+  SHA-256 das features, dos manifestos, das exclusões e dos conjuntos iniciais, versões), `curves.jsonl`
+  (seed, estratégia, iteração, nº rotulado, split, Macro-F1, tempos, IDs adquiridos) e `full_baseline.json`.
+  Os gráficos e tabelas do notebook só leem estes ficheiros. A retoma valida configuração e hashes.
+
+Execução no notebook (todo o código está em `notebooks/01_waste_classification_hitl.ipynb`):
+`RUN_EXPERIMENT_A = True` (secção 8.4) corre o protocolo completo, retomável (20 execuções).
+
+Limitações: as consultas operam por imagem, sem tratar duplicados quase exatos do pool não rotulado
+(política de grupos ainda pendente); o aprendiz é linear sobre features fixas (conclusões não se transferem
+automaticamente para a Experiência B); a incerteza dos pontos individuais é limitada por 5 seeds.
+
 ## Problemas históricos preservados e decisões pendentes
 
 - Baseline original: split 80/20 sem validação independente nem grupos.
 - Pool de 2% e interface de 150 imagens: partem do dataset inteiro, incluindo
   imagens que o novo protocolo reserva a validação/teste; não são pools conformes.
-- Simulação: split aleatório não estratificado e consulta do teste a cada iteração;
+- Simulação histórica (substituída na Experiência A pelo protocolo acima): split aleatório não estratificado e consulta do teste a cada iteração;
   pode induzir leakage de seleção se usado para escolher estratégia/orçamento.
 - Dependências entre células: `garbage_features.npz`; variáveis globais `X`, `y`,
   `filenames`, pools e modelos; funções de query redefinidas; `os.listdir` não
@@ -214,25 +258,16 @@ não participam em gradient updates, ajuste de scaler ou aquisição de amostras
   resultados das células históricas como experiências realizadas com este protocolo.
 - Os três conflitos exatos foram resolvidos por exclusão humana (acima). Não excluir
   outras imagens nem tirar novas conclusões sobre os candidatos visuais nesta tarefa.
-- Fixar orçamento final, batches, repetições/seeds, frequência de validação,
-  hiperparâmetros/early stopping/checkpoints e critério prévio de desempate Macro-F1/AULC.
+- Experiência A: orçamento, batch, seeds e validação por iteração estão fixados acima. Pendentes para a
+  Experiência B: hiperparâmetros/early stopping/checkpoints e critério prévio de desempate Macro-F1/AULC.
 - Decidir consultas por imagem ou grupo, propagação de rótulos e custo humano,
   separando rótulos simulados, humanos e de validação. Não implementar AL nesta tarefa.
 
 ## Reproduzir e testar
 
-```powershell
-uv run --locked python notebooks/dataset_protocol.py
-uv run --locked python -m unittest discover -s notebooks -p test_dataset_protocol.py -v
-```
-
-O primeiro comando aplica `excluded_images.csv` (idempotente) e atualiza checksums e estatísticas
+No notebook, `REFRESH_MANIFESTS = True` (secção 6.2, `refresh_effective_dataset()`) aplica `excluded_images.csv` (idempotente) e atualiza checksums e estatísticas
 nos manifestos existentes. Não executa nova divisão, hashing ou cálculo de candidatos.
 Os splits foram criados originalmente com os rótulos Kaggle; esta curadoria posterior
-preserva os seus IDs e apenas atualiza as contagens. O comando recusa alterações
+preserva os seus IDs e apenas atualiza as contagens. A função recusa alterações
 inesperadas aos ficheiros de pertença dos conjuntos/pools.
-Para ver as figuras, executar apenas os imports/configuração originais e as células
-EDA que antecedem os modelos no notebook. Os testes cobrem contagens, checksums,
-integridade dos caminhos Windows/POSIX, exclusividade, grupos, estratificação,
-reprodução byte a byte, pools, vistas de rótulos, índice visual contra brute force
-numa fixture pequena, componentes transitivas e corrupção/invalidação da cache.
+As figuras estão nas secções 4–5 do notebook.
