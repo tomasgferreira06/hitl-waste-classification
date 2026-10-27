@@ -7,8 +7,8 @@ identificador `mostafaabla/garbage-classification/versions/1`. São mantidas tod
 15 515 imagens e as 12 classes originais. Não se treinou qualquer modelo, não se
 extraíram features e não se alteraram os algoritmos ou interfaces HITL.
 
-As experiências A (MobileNetV2 pré-treinada + Logistic Regression) e B
-(YOLO26s Classification + fine-tuning) deverão consumir os mesmos manifestos.
+O pipeline (MobileNetV2 pré-treinada como extrator + Logistic Regression + Active Learning)
+deverá consumir estes manifestos.
 Os modelos históricos ainda **não** os consomem: esta tarefa prepara o protocolo,
 sem migrar os ciclos de treino. Executar apenas a secção EDA do notebook; parar
 antes do separador «Implementação científica histórica». Não utilizar Run All.
@@ -97,8 +97,8 @@ white-glass 774; restantes classes inalteradas). Os splits não foram refeitos: 
 (`pre_exclusion_manifest_sha256`). Efetivos: treino 10856, validação 1552, teste 3104, pool inicial
 200 (inalterado, nenhuma exclusão lhe pertencia) e unlabeled 10656.
 
-`GarbageDataset` omite os caminhos de `excluded_images.csv` e as duas experiências deverão partilhar
-`load_effective_inventory()`. Não percorrer diretamente as pastas Kaggle no futuro treino YOLO. O treino e a migração dos ciclos AL continuam
+`GarbageDataset` omite os caminhos de `excluded_images.csv` e o pipeline deverá usar
+`load_effective_inventory()`. Não percorrer diretamente as pastas Kaggle. O treino e a migração dos ciclos AL continuam
 fora desta tarefa. Os arquivos de features sem o SHA-256 atual de `excluded_images.csv`
 são recusados explicitamente pelos carregadores do notebook; não são apagados.
 Reiniciar o kernel para não reutilizar variáveis/modelos históricos em memória.
@@ -114,7 +114,7 @@ imagens. Isto evita fuga pelos pares identificados sem declarar candidatos como
 confirmados; pode manter imagens distintas juntas. Rever esta política e os
 conflitos adicionais antes do treino. Os três conflitos acima estão resolvidos
 por decisão humana; os grupos e splits desta tarefa não mudam. Uma revisão futura que altere grupos exige gerar novamente
-e congelar todos os manifestos para ambas as experiências.
+e congelar todos os manifestos para o pipeline.
 
 ## Divisão reproduzível
 
@@ -191,7 +191,7 @@ diferir caso se propaguem anotações por grupos; essa política ainda precisa d
 **Secundárias:** accuracy, precision/recall/F1 por classe, matriz de confusão,
 tempo de treino e inferência, memória e custo computacional. Distinguir warmup,
 extração de features e treino, registando hardware/software. Usar as mesmas
-divisões, pool inicial e orçamentos nas experiências A e B, sem exigir modelos iguais.
+divisões, pool inicial e orçamentos em todas as estratégias de query.
 
 Random Sampling, Least Confidence, Margin Sampling e Entropy Sampling são
 estratégias de query, não métricas. Selecionar principalmente por Macro-F1 e
@@ -199,7 +199,7 @@ eficiência de anotação de validação; nunca por curvas de teste repetidas.
 Transforms/normalizações aprendidas usam só treino rotulado. Validação/teste
 não participam em gradient updates, ajuste de scaler ou aquisição de amostras.
 
-## Protocolo da Experiência A (Active Learning com features pré-extraídas)
+## Protocolo de Active Learning (com features pré-extraídas)
 
 **Pergunta:** conseguem as estratégias de AL aproximar-se do desempenho com todo o treino usando
 muito menos imagens anotadas do que Random Sampling?
@@ -240,15 +240,15 @@ Execução no notebook (todo o código está em `notebooks/01_waste_classificati
 `RUN_EXPERIMENT_A = True` (secção 8.4) corre o protocolo completo, retomável (20 execuções).
 
 Limitações: as consultas operam por imagem, sem tratar duplicados quase exatos do pool não rotulado
-(política de grupos ainda pendente); o aprendiz é linear sobre features fixas (conclusões não se transferem
-automaticamente para a Experiência B); a incerteza dos pontos individuais é limitada por 5 seeds.
+(política de grupos ainda pendente); o aprendiz é linear sobre features fixas (as conclusões não se generalizam
+automaticamente a outros extratores ou classificadores); a incerteza dos pontos individuais é limitada por 5 seeds.
 
 ## Problemas históricos preservados e decisões pendentes
 
 - Baseline original: split 80/20 sem validação independente nem grupos.
 - Pool de 2% e interface de 150 imagens: partem do dataset inteiro, incluindo
   imagens que o novo protocolo reserva a validação/teste; não são pools conformes.
-- Simulação histórica (substituída na Experiência A pelo protocolo acima): split aleatório não estratificado e consulta do teste a cada iteração;
+- Simulação histórica (substituída pelo protocolo acima): split aleatório não estratificado e consulta do teste a cada iteração;
   pode induzir leakage de seleção se usado para escolher estratégia/orçamento.
 - Dependências entre células: `garbage_features.npz`; variáveis globais `X`, `y`,
   `filenames`, pools e modelos; funções de query redefinidas; `os.listdir` não
@@ -258,8 +258,7 @@ automaticamente para a Experiência B); a incerteza dos pontos individuais é li
   resultados das células históricas como experiências realizadas com este protocolo.
 - Os três conflitos exatos foram resolvidos por exclusão humana (acima). Não excluir
   outras imagens nem tirar novas conclusões sobre os candidatos visuais nesta tarefa.
-- Experiência A: orçamento, batch, seeds e validação por iteração estão fixados acima. Pendentes para a
-  Experiência B: hiperparâmetros/early stopping/checkpoints e critério prévio de desempate Macro-F1/AULC.
+- Orçamento, batch, seeds e validação por iteração estão fixados acima. Pendente: critério prévio de desempate Macro-F1/AULC.
 - Decidir consultas por imagem ou grupo, propagação de rótulos e custo humano,
   separando rótulos simulados, humanos e de validação. Não implementar AL nesta tarefa.
 

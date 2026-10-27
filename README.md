@@ -6,7 +6,7 @@ PracticalLab 1 da unidade curricular Trustworthy and Responsible Artificial Inte
 ## Estrutura
 
 - `notebooks/01_waste_classification_hitl.ipynb`: notebook único com **todo o código Python do projeto**
-  (dataset, EDA, protocolo, features, Experiência A e HITL). Não há módulos `.py` locais.
+  (dataset, EDA, protocolo, features, Active Learning e HITL). Não há módulos `.py` locais.
 - `notebooks/garbage_features.npz`: features MobileNetV2 pré-extraídas.
 - `data/`: dados do projeto.
 - `artifacts/`: resultados e modelos.
@@ -85,11 +85,11 @@ mantém as corretas (os rótulos Kaggle nunca são alterados):
 | `metal/metal459.jpg` | `white-glass/white-glass412.jpg` |
 | `white-glass/white-glass761.jpg` | `plastic/plastic556.jpg` |
 
-`inventory.csv` continua a ser o inventário Kaggle completo (EDA); as experiências usam
+`inventory.csv` continua a ser o inventário Kaggle completo (EDA); o pipeline usa
 `load_effective_inventory()`, `GarbageDataset` e os manifestos de divisão, todos sem as
 exclusões. Os splits não foram refeitos: apenas se removeram os três ids de `train` e
 `unlabeled` (treino 10856, validação 1552, teste 3104, pool inicial 200, unlabeled 10656).
-Futuras experiências A e B, incluindo YOLO, devem partir de `load_effective_inventory()`
+O pipeline parte de `load_effective_inventory()`
 e nunca percorrer diretamente as pastas Kaggle.
 
 Reiniciar o kernel depois desta alteração. Os arquivos de features guardam o SHA-256 de
@@ -100,16 +100,14 @@ ser regenerado, não reutilizado). Nenhum ficheiro foi apagado.
 As pastas `data/` e `artifacts/` mantêm-se disponíveis; o notebook utiliza a
 cache do Kaggle para as imagens e o caminho original para as features.
 
-## Experiência B: YOLO26s Classification (pendente)
+## Ambiente (PyTorch CUDA)
 
 No Windows, `pyproject.toml` seleciona as builds CUDA 13.0 de PyTorch e
-Torchvision pelo índice oficial `cu130`, conforme a
+Torchvision (MobileNetV2) pelo índice oficial `cu130`, conforme a
 [integração uv/PyTorch](https://docs.astral.sh/uv/guides/integration/pytorch/).
-As versões exatas estão em `uv.lock`. Os pesos e a configuração local Ultralytics
-ficam em `artifacts/`, excluídos do Git; pesos `*.pt` e pastas `runs/` também são ignorados.
-O fine-tuning nas 12 classes ainda não está implementado.
+As versões exatas estão em `uv.lock`.
 
-## EDA e protocolo comum às experiências A e B
+## EDA e protocolo experimental
 
 As secções 4–6 do notebook contêm tabelas, gráficos, auditoria de integridade/duplicados
 e os manifestos. As células históricas dos modelos (pool de 2%, interface de 150 imagens)
@@ -121,7 +119,7 @@ os problemas históricos e as decisões pendentes. Macro-F1 é a métrica princi
 AULC de Macro-F1 de validação mede eficiência de anotação. O teste fica reservado
 à avaliação final, sem selecionar estratégias/configurações.
 
-Os manifestos em `data/manifests/` são comuns às duas experiências: treino 10859,
+Os manifestos em `data/manifests/` são a base do pipeline: treino 10859,
 validação 1552, teste 3104; pool inicial 200 e não rotulado 10659, exclusivamente
 do treino. SHA-256 exatos e candidatos pHash são agrupados conservadoramente para
 não atravessar splits. As três exclusões humanas estão em `excluded_images.csv`;
@@ -138,7 +136,7 @@ em `artifacts/eda/`; apagar essa cache força nova auditoria. Gráficos e miniat
 ficam nessa pasta ignorada pelo Git; não guardar outputs de miniaturas no notebook
 versionado. Apenas metadados e identificadores, sem imagens, são versionáveis.
 
-## Experiência A: Active Learning (protocolo)
+## Active Learning (protocolo)
 
 Comparação Random / Least Confidence / Margin / Entropy com features MobileNetV2 + Logistic Regression,
 5 seeds, 200 rótulos iniciais e execução contínua até 5 000 rótulos (batch 100). **Macro-F1 de validação** é a
